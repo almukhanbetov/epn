@@ -1,0 +1,50 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build Docker image
+      run: docker build -t my-static-site .
+
+    - name: Copy files to VPS
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: 22
+        source: "."
+        target: "~/my-static-site"
+
+    - name: Check Docker status and deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: 22
+        script: |
+          echo "🔍 Checking Docker status..."
+          docker --version || { echo "❌ Docker not installed!"; exit 1; }
+          docker ps || { echo "❌ Docker not running!"; exit 1; }
+
+          echo "✅ Docker is working!"
+
+          echo "🚀 Deploying container..."
+          cd ~/my-static-site
+          docker stop my-static-site || true
+          docker rm my-static-site || true
+          docker build -t my-static-site .
+          docker run -d -p 8080:80 --name my-static-site my-static-site
